@@ -19,17 +19,6 @@ def connect_instrument():
 def get_id(inst):
     print(inst.query('*IDN?')[:36])
 
-def run_process(inst, start, stop, step, source='VOLT', sensor='CURR', compliance=100e-3, delay = 0):
-    get_id(inst)
-    reset_instrument(inst)
-    setting_measure(inst, source, sensor)
-    set_compliance(inst, compliance)
-    set_source_delay(inst, delay=0)
-    turn_on(inst)
-    result = measure(inst, start, stop, step)
-    turn_off(inst)
-    save_data(result)
-
 def measure(inst, start, stop, step):
     result = ['volts, amps']
     for x in np.arange(start, stop, step):
@@ -78,9 +67,21 @@ def wire_mode(inst):
     print(inst.query(':SYST:RSEN?'))
 
 def two_wire_mode(inst):
-    inst.write(':SYST:RSEN ON')
-    return '4 Wire Mode setted.'
+    inst.write(':SYST:RSEN OFF')
 
 def four_wire_mode(inst):
-    inst.write(':SYST:RSEN OFF')
-    return '2 Wire Mode setted.'
+    inst.write(':SYST:RSEN ON')
+
+def run_resistance_measure():
+    pass
+
+def run_IV_measure(inst, start, stop, step, source='VOLT', sensor='CURR', compliance=100e-3, delay = 0):
+    get_id(inst)
+    reset_instrument(inst)
+    setting_measure(inst, source, sensor)
+    set_compliance(inst, compliance)
+    set_source_delay(inst, delay=0)
+    turn_on(inst)
+    result = measure(inst, start, stop, step)
+    turn_off(inst)
+    save_data(result)

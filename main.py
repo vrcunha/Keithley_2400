@@ -1,4 +1,8 @@
-from instrument.keithley_2400 import connect_instrument, run_process
+from instrument.keithley_2400 import connect_instrument, run_IV_measure
+
+# TODO: colocar log no programa
+# TODO: começar interface gráfica com pyqt
+# TODO: fazer função para medição de resistencia com tensao cte
 
 settings_dict = {
     'start': -0.5,
@@ -12,4 +16,4 @@ settings_dict = {
 
 if __name__ == '__main__':
     Keithley = connect_instrument()
-    run_process(Keithley, **settings_dict)
+    run_IV_measure(Keithley, **settings_dict)
