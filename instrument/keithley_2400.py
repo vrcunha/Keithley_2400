@@ -13,14 +13,14 @@ def connect_instrument():
             inst = init_instrument(rm, instrument)
             inst.timeout = 5000
         except visa.errors.VisaIOError:
-            print('Erro ao conectar com  O Keithley.')
+            print('Error to connect with Keithley.')
     return inst
 
 def get_id(inst):
-    return inst.query('*IDN?')[:36]
+    print(inst.query('*IDN?')[:36])
 
-def process(inst, start, stop, step, source='VOLT', sensor='CURR', compliance='100e-3', delay = 0):
-    print(get_id(inst))
+def run_process(inst, start, stop, step, source='VOLT', sensor='CURR', compliance=100e-3, delay = 0):
+    get_id(inst)
     reset_instrument(inst)
     setting_measure(inst, source, sensor)
     set_compliance(inst, compliance)
@@ -49,42 +49,38 @@ def save_data(result):
 
 def set_source_delay(inst, delay=0):
     inst.write(f':SOUR:DEL {delay}')
-    return f'Source delay setted to {delay}.'
 
 def setting_measure(inst, source='VOLT', sensor='CURR'):
     inst.write(f':SENS:FUNC "{source}", "{sensor}"')
 
 def turn_on(inst):
     inst.write(':OUTP ON')
-    return 'Output ON.'
 
 def turn_off(inst):
     inst.write(':OUTP OFF')
-    return 'Output OFF.'
 
-def select_panel(inst):
-    response = inst.query(':ROUT:TERM?')
-    print(response)
-    if response == 'FRON':
-        inst.write(':ROUT:TERM REAR')
-        return 'Rear terminal setted.'
-    else:
-        inst.write(':ROUT:TERM FRONT')
-        return 'Front terminal setted.'
+def wich_panel(inst):
+    print(inst.query(':ROUT:TERM?'))
 
-def set_compliance(inst, value='100e-3'):
+def select_front_panel(inst):
+    inst.write(':ROUT:TERM FRONT')
+
+def select_rear_panel(inst):
+    inst.write(':ROUT:TERM REAR')
+
+def set_compliance(inst, value=100e-3):
     inst.write(f':SENS:CURR:PROT {value}')
-    return f'Compliance current setted to {value}.'
 
 def reset_instrument(inst):
     inst.write('*RST')
-    return 'Reseted'
 
-def select_mode(inst):
-    response = inst.query(':SYST:RSEN?')
-    if response == '0':
-        inst.write(':SYST:RSEN ON')
-        return '4 Wire Mode setted.'
-    if response == '1':
-        inst.write(':SYST:RSEN OFF')
-        return '2 Wire Mode setted.'
+def wire_mode(inst):
+    print(inst.query(':SYST:RSEN?'))
+
+def two_wire_mode(inst):
+    inst.write(':SYST:RSEN ON')
+    return '4 Wire Mode setted.'
+
+def four_wire_mode(inst):
+    inst.write(':SYST:RSEN OFF')
+    return '2 Wire Mode setted.'
