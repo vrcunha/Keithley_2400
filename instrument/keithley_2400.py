@@ -1,8 +1,20 @@
 import numpy as np
+import pyvisa as visa
+from pyvisa import errors
+
+rm = visa.ResourceManager('@py')
 
 def init_instrument(rm, port):
     return rm.open_resource(port, baud_rate=9600,
                             write_termination='\r', read_termination='\r')
+def connect_instrument():
+    for instrument in rm.list_resources():
+        try:
+            inst = init_instrument(rm, instrument)
+            inst.timeout = 5000
+        except visa.errors.VisaIOError:
+            print('Erro ao conectar com  O Keithley.')
+    return inst
 
 def get_id(inst):
     return inst.query('*IDN?')[:36]

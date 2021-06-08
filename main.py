@@ -1,16 +1,4 @@
-import matplotlib.pyplot as plt
-import pyvisa as visa
-from pyvisa import errors
-from instrument.keithley_2400 import init_instrument, process
-
-rm = visa.ResourceManager('@py')
-
-for instrument in rm.list_resources():
-    try:
-        inst = init_instrument(rm, instrument)
-        inst.timeout = 5000
-    except visa.errors.VisaIOError:
-        print('Erro ao conectar com  O Keithley.')
+from instrument.keithley_2400 import connect_instrument, process
 
 settings_dict = {
     'start': -0.5,
@@ -22,4 +10,6 @@ settings_dict = {
     'delay': 0
 }
 
-process(inst, **settings_dict)
+if __name__ == '__main__':
+    Keithley = connect_instrument()
+    process(Keithley, **settings_dict)
