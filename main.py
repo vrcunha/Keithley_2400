@@ -91,7 +91,10 @@ class Keithley_MainWindow(QMainWindow, Ui_MainWindow):
         self.actionExit.triggered.connect(self.close)
 
         self.MplWidget.setBackground('w')
-        pen = pg.mkPen(color=(255, 0, 0))
+        self.MplWidget.setTitle("Medida", color="k", size="25pt")
+        styles = {'color':'r', 'font-size':'25px'}
+        self.MplWidget.setLabel('left', 'Current (A)', **styles)
+        self.MplWidget.setLabel('bottom', 'Voltate (V)', **styles)
         self.graph = self.MplWidget.getPlotItem()
 
     def run_measure(self):
@@ -106,7 +109,8 @@ class Keithley_MainWindow(QMainWindow, Ui_MainWindow):
     def update_plot_data(self, values):
         x_vals = values[0]
         y_vals = values[1]
-        self.graph.plot(x_vals, y_vals)
+        self.graph.plot(x_vals, y_vals, pen=pg.mkPen(color=(0, 0, 0), width=4), 
+                        symbol='o', symbolSize=10, symbolBrush=('k'))
 
     def connect_instrument(self):
         """Function to instanciate the instrument."""
