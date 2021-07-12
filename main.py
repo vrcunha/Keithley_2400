@@ -7,21 +7,19 @@ from time import sleep
 from datetime import datetime as dt
 from pyvisa import ResourceManager, errors
 from PyQt5.QtCore import QThread
-from PyQt5.QtWidgets import QMainWindow, QApplication, QFileDialog
+from PyQt5.QtWidgets import QMainWindow, QApplication, QFileDialog, QMessageBox, QLineEdit, QLabel
 from GUI.keithley_ui import Ui_MainWindow
 
 logging.config.fileConfig('Keithley_log.ini')
 logger = logging.getLogger('root')
 
-# TODO: Message Box
-# TODO: função para medição de resistencia com tensao cte
-# TODO: implementar test
-
-class Worker(QThread):
+class Worker_IV(QThread):
     _data = pg.QtCore.Signal(object)
+    _signal = pg.QtCore.Signal(int)
+    _msg = pg.QtCore.Signal(str)
     
     def __init__(self, inst, infos):
-        super(Worker, self).__init__()
+        super(Worker_IV, self).__init__()
         self.infos = infos
         try:
             self.measure_range = np.arange(float(self.infos["Start"]), 
@@ -46,7 +44,7 @@ class Worker(QThread):
         self.inst.write(f':SENS:FUNC "{self.infos["Source"]}", "{self.infos["Sensor"]}"')
         self.inst.write(':OUTP ON')
         try:
-            for value in self.measure_range:
+            for num, value in enumerate(self.measure_range):
                 try:
                     self.inst.write(f':SOUR:VOLT {value}')
                     _x = list()
@@ -59,26 +57,97 @@ class Worker(QThread):
                     self.x_vals.append(float(np.mean(_x)))
                     self.y_vals.append(float(np.mean(_y)))
                     self.std_vals.append(float(np.std(_y)))
-                    self._data.emit((self.x_vals, self.y_vals))
+                    self._data.emit((self.x_vals, self.y_vals, self.std_vals))
+                    self._signal.emit(num)
                     sleep(0.2)
                 except ValueError:
                     continue
+                except errors.VisaIOError:
+                    msg = 'Device not connected.'
+                    self._msg.emit(msg)
+                    logger.warning(msg)
+        except AttributeError as ae:
+            print(ae)
+        self.inst.write(':OUTP OFF')
+
+class Worker_Ohms(QThread):
+    _data = pg.QtCore.Signal(object)
+    _msg = pg.QtCore.Signal(str)
+    
+    def __init__(self, inst, infos, app):
+        super(Worker_Ohms, self).__init__()
+        self.infos = infos
+        self.inst  = inst
+        self.sensor = self.infos["Sensor"].upper()
+        self.source = self.infos["Source"].upper()
+        self.app = app
+        self.x_vals = []
+        self.y_vals = []
+        self.std_vals = []
+        self.is_running = True
+
+    def stop(self):
+        self.is_running = False
+        print('Stopping Thread.')
+        self.terminate()
+
+    def run(self):
+        self.inst.write(f':SOUR:DEL {int(self.infos["Delay"])}')
+        self.inst.write(f':SENS:FUNC "{self.sensor}"')
+        self.inst.write(f':SENS:{self.sensor}:MODE MAN') 
+        self.inst.write(f':SOUR:FUNC {self.source}')
+        self.inst.write(f':SOUR:{self.source}:MODE FIX')
+        self.inst.write(f':SOUR:{self.source}:LEV {float(self.infos["Fixed Voltage"])}')
+        self.inst.write(':OUTP ON')
+        try:
+            ri = 1
+            while True:
+                if self.app.thread_name['ohms'] is True:
+                    for r1 in range(int(self.infos["Number of Measures"])):
+                        _y = list()
+                        try:
+                            for r2 in np.arange(self.infos["Repetitions"]):
+                                query = self.inst.query(':READ?').split(',')
+                                _y.append(float(query[1]))
+                                sleep(0.1)
+                            self.x_vals.append(ri)
+                            self.y_vals.append(float(np.mean(_y)))
+                            self.std_vals.append(float(np.std(_y)))
+                            self._data.emit((self.x_vals, self.y_vals, self.std_vals))
+                            ri += 1
+                        except ValueError:
+                            continue
+                        except errors.VisaIOError:
+                            msg = 'Device not connected.'
+                            self._msg.emit(msg)
+                            logger.warning(msg)
+                    self.app.thread_name['ohms'] = None
+                    self.app._signal.emit('ohms')
+                else:
+                    if self.app.thread_name['ohms'] == False:
+                        self.stop()
+                    sleep(1)
         except AttributeError as ae:
             print(ae)
         self.inst.write(':OUTP OFF')
 
 class Keithley_MainWindow(QMainWindow, Ui_MainWindow):
+    _signal = pg.QtCore.Signal(str)
+
     def __init__(self, parent=None):
         super(Keithley_MainWindow, self).__init__(parent)
         self.setupUi(self)
         self.rm = ResourceManager('@py')
         self.inst = self.connect_instrument()
         self.reset_instrument()
+        self.thread_name = {}
+        if self.get_id() == 'Device not connected.':
+            self.message_box('Device not connected.')
         self.date_label.setText(f'Data: {dt.now().strftime("%d-%m-%Y")}')
         self.pwr_on_btn.clicked.connect(self.power_on)
         self.pwr_off_btn.clicked.connect(self.power_off)
         self.run_btn.clicked.connect(self.run_measure)
-        self.save_btn.clicked.connect(self.abort_func)
+        self.save_btn.clicked.connect(self.auxiliar_func)
         self.conn_btn.clicked.connect(self.connection)
 
         self.w2_rbtn.toggled.connect(self.select_wire_mode)
@@ -90,27 +159,91 @@ class Keithley_MainWindow(QMainWindow, Ui_MainWindow):
         self.actionSave.triggered.connect(self.save_file)
         self.actionExit.triggered.connect(self.close)
 
+        self.progressBar.setValue(0)
+        self._signal.connect(self.show_dialog)
+        self.measure_type.currentTextChanged.connect(self.value_changed)
+
         self.MplWidget.setBackground('w')
         self.MplWidget.setTitle("Medida", color="k", size="25pt")
         styles = {'color':'r', 'font-size':'25px'}
-        self.MplWidget.setLabel('left', 'Current (A)', **styles)
-        self.MplWidget.setLabel('bottom', 'Voltate (V)', **styles)
+        self.MplWidget.setLabel('left', 'Current', units ='A', **styles)
+        self.MplWidget.setLabel('bottom', 'Voltage', units ='V', **styles)
         self.graph = self.MplWidget.getPlotItem()
 
-    def run_measure(self):
-        self.worker = Worker(self.inst, self.get_info())
-        self.worker._data.connect(self.update_plot_data)
-        self.worker.start()
+    def value_changed(self):
+        styles = {'color':'r', 'font-size':'25px'}
+        if self.measure_type.currentText() == 'IV':
+            self.MplWidget.setLabel('left', 'Current', units ='A', **styles)
+            self.MplWidget.setLabel('bottom', 'Voltage', units ='V', **styles)
+            self.step_label.setText("Step")
+            self.stop_label.setText("Stop")
+            self.start_input = QLineEdit(self.gridLayoutWidget)
+            self.start_input.setObjectName("start_input")
+            self.range_grid.addWidget(self.start_input, 1, 1, 1, 1)
+            self.start_label = QLabel(self.gridLayoutWidget)
+            self.start_label.setObjectName("start_label")
+            self.start_label.setText("Start")
+            self.range_grid.addWidget(self.start_label, 1, 0, 1, 1)
 
-    def abort_func(self):
-        print('Abortar medida')
-        self.worker.stop()
+        if self.measure_type.currentText() == 'Fixed Voltage':
+            self.MplWidget.setLabel('left', 'Resistance', **styles)
+            self.MplWidget.setLabel('bottom', 'Counts', **styles)
+            self.step_label.setText("Measures")
+            self.stop_label.setText("Voltage")
+            self.start_input.deleteLater()
+            self.start_label.deleteLater()
+
+    def run_measure(self):
+        if self.measure_type.currentText() == 'IV':
+            self.range_size = ((float(self.stop_input.text()) - float(self.start_input.text())) \
+                                / float(self.step_input.text()))
+            self.progressBar.setMaximum(int(self.range_size))
+            self.worker = Worker_IV(self.inst, self.get_info())
+            self.worker._signal.connect(self.signal_accept)
+        if self.measure_type.currentText() == 'Fixed Voltage':
+            self.thread_name['ohms'] = True
+            self.worker = Worker_Ohms(self.inst, self.get_info(), self)
+        self.worker._data.connect(self.update_plot_data)
+        self.worker._msg.connect(self.message_box)
+        self.worker.start()
+    
+    def signal_accept(self, msg):
+        self.progressBar.setValue(int(msg))
+    
+    def message_box(self, msg):
+        mbox = QMessageBox.about(self, "Warning", msg)
+    
+    def show_dialog(self):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
+        msg.setText("Do you want to exchange sample?")
+        end_btn = msg.addButton('End', msg.NoRole)
+        continue_btn = msg.addButton('Continue', msg.YesRole)
+        msg.setDefaultButton(continue_btn)
+        msg.setEscapeButton(end_btn)
+        response = msg.exec_()
+        if response == 1:
+            self.thread_name['ohms'] = True
+        elif response == 0:
+            self.thread_name['ohms'] = False
+
+    def auxiliar_func(self):
+        if self.worker.is_running == True:
+            self.worker.stop()
+        elif self.worker.is_running == False:
+            self.save_file()
 
     def update_plot_data(self, values):
-        x_vals = values[0]
-        y_vals = values[1]
-        self.graph.plot(x_vals, y_vals, pen=pg.mkPen(color=(0, 0, 0), width=4), 
-                        symbol='o', symbolSize=10, symbolBrush=('k'))
+        self.x_vals = values[0]
+        self.y_vals = values[1]
+        self.std_values = values[2]
+        self.graph.clear()
+        if self.measure_type.currentText() == 'IV':
+            self.graph.plot(self.x_vals, self.y_vals, pen=pg.mkPen(color=(0, 0, 0), width=4), 
+                            symbol='o', symbolSize=10, symbolBrush=('k'))
+        if self.measure_type.currentText() == 'Fixed Voltage':
+            self.graph.plot(self.x_vals, self.y_vals, pen=pg.mkPen(color=(0, 0, 0), width=4), 
+                            symbol='o', symbolSize=10, symbolBrush=('k'))
 
     def connect_instrument(self):
         """Function to instanciate the instrument."""
@@ -120,10 +253,10 @@ class Keithley_MainWindow(QMainWindow, Ui_MainWindow):
                 k2400.timeout = 5000
             except AttributeError:
                 print('Unknown error')
-                # logger.warning(e)
+                logger.warning(e)
             except errors.VisaIOError as e:
                 print('Not possible to connect the device.')
-                # logger.warning(e)
+                logger.warning(e)
         return k2400
 
     def init_inst(self, port):
@@ -134,7 +267,7 @@ class Keithley_MainWindow(QMainWindow, Ui_MainWindow):
                 )
         except Exception as e:
             print(f'Initialization error -> {e}')
-            # logger.warning(e)
+            logger.warning(e)
 
     def reset_instrument(self):
         """Function to reset instrument commands."""
@@ -145,7 +278,7 @@ class Keithley_MainWindow(QMainWindow, Ui_MainWindow):
         try:
             return self.inst.query('*IDN?')[:36]
         except errors.VisaIOError as e:
-            # logger.warning(e)
+            logger.warning(e)
             return 'Device not connected.'
 
     def connection(self):
@@ -153,20 +286,36 @@ class Keithley_MainWindow(QMainWindow, Ui_MainWindow):
         self.conn_label.setWordWrap(True)
 
     def get_info(self):
-        return {
-            'User': self.user_input.text(),
-            'Date': self.date_label.text()[6:],
-            'Measure range': '',
-            'Start': self.start_input.text(),
-            'Step': self.step_input.text(),
-            'Stop': self.stop_input.text(),
-            'Measure setup': '',
-            'Source': self.src_comboBox.currentText(),
-            'Sensor': self.sns_comboBox.currentText(),
-            'Compliance': float(self.comp_input.text()),
-            'Delay': int(self.delay_input.text()),
-            'Repetitions': self.repet_spinBox.value()
-        }
+        try:
+            return {
+                'User': self.user_input.text(),
+                'Sample': self.user_input_2.text(),
+                'Date': self.date_label.text()[6:],
+                'Measure setup': '',
+                'Start': self.start_input.text(),
+                'Step': self.step_input.text(),
+                'Stop': self.stop_input.text(),
+                'Source': self.src_comboBox.currentText(),
+                'Sensor': self.sns_comboBox.currentText(),
+                'Compliance': float(self.comp_input.text()),
+                'Delay': int(self.delay_input.text()),
+                'Repetitions': self.repet_spinBox.value()
+            }
+        except RuntimeError:
+                return {
+                'User': self.user_input.text(),
+                'Sample': self.user_input_2.text(),
+                'Date': self.date_label.text()[6:],
+                'Measure setup': '',
+                'Number of Measures': self.step_input.text(),
+                'Fixed Voltage': self.stop_input.text(),
+                'Source': self.src_comboBox.currentText(),
+                'Sensor': self.sns_comboBox.currentText(),
+                'Compliance': float(self.comp_input.text()),
+                'Delay': int(self.delay_input.text()),
+                'Repetitions': self.repet_spinBox.value()
+            }
+
 
     def power_on(self):
         """Function to turn keithley on."""
@@ -203,14 +352,14 @@ class Keithley_MainWindow(QMainWindow, Ui_MainWindow):
                 for key, val in self.get_info().items():
                     file.write(f'{key}: {val}\n')
                 file.write(f'\n')
-                for line in self.result:
+                for line in zip(self.x_vals, self.y_vals, self.std_values):
                     file.write(f'{line}\n')
         except ValueError as VE:
             print('Empty Field, fill all fields.')
-            # logger.warning(f'{VE}')
+            logger.warning(f'{VE}')
         except Exception as e:
             pass
-            # logger.warning(f'{e}')
+            logger.warning(f'{e}')
         return None
 
     def open_file(self):
