@@ -268,11 +268,10 @@ class Ui_MainWindow(object):
         self.actionExit.setObjectName("actionExit")
         self.actionSobre = QtWidgets.QAction(MainWindow)
         self.actionSobre.setObjectName("actionSobre")
-        self.actionManual = QtWidgets.QAction(MainWindow)
-        self.actionManual.setObjectName("actionManual")
-        self.menuMenu.addAction(self.actionOpen)
+        # self.menuMenu.addAction(self.actionOpen)
+        self.menuMenu.addAction(self.actionSave)
         self.menuMenu.addAction(self.actionExit)
-        self.menuHelp.addAction(self.actionManual)
+
         self.menuHelp.addAction(self.actionSobre)
         self.menubar.addAction(self.menuMenu.menuAction())
         self.menubar.addAction(self.menuHelp.menuAction())
@@ -282,7 +281,7 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "Keithley 2400"))
         self.range_label.setText(_translate("MainWindow", "Measure Range"))
         self.stop_label.setText(_translate("MainWindow", "Stop"))
         self.step_label.setText(_translate("MainWindow", "Step"))
@@ -307,7 +306,7 @@ class Ui_MainWindow(object):
         self.conn_label.setText(_translate("MainWindow", "Connection Test"))
         self.conn_btn.setText(_translate("MainWindow", "Check Connection"))
         self.run_btn.setText(_translate("MainWindow", "Run"))
-        self.save_btn.setText(_translate("MainWindow", "Save"))
+        self.save_btn.setText(_translate("MainWindow", "Abort"))
         self.date_label.setText(_translate("MainWindow", "Datetime"))
         self.delay_input.setInputMask(_translate("MainWindow", "0"))
         self.comp_label_2.setText(_translate("MainWindow", "Delay"))
@@ -322,4 +321,3 @@ class Ui_MainWindow(object):
         self.actionSave.setText(_translate("MainWindow", "Save"))
         self.actionExit.setText(_translate("MainWindow", "Exit"))
         self.actionSobre.setText(_translate("MainWindow", "Sobre"))
-        self.actionManual.setText(_translate("MainWindow", "Manual"))
